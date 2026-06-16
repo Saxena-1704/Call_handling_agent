@@ -61,6 +61,9 @@ class TwilioMediaStreamDevice(AudioDevice):
                         "streamSid": self._stream_sid,
                         "media": {"payload": payload}
                     })
+                    if self._stop_evt.is_set():
+                        break
+                    await asyncio.sleep(len(chunk) / 16000)
                 except Exception:
                     break
         finally:

@@ -80,6 +80,7 @@ class VoiceAgentController:
             await self.audio_device.stop_playback()
 
         if seg is not None:
+            current = self._sm.state
             if current in (CallState.LISTENING, CallState.INTERRUPTED, CallState.PROCESSING):
                 self._sm.transition(CallEvent.SPEECH_END)
                 await self._segment_queue.put(seg)
@@ -116,6 +117,7 @@ class VoiceAgentController:
             return
 
         self._sm.transition(CallEvent.RESPONSE_READY)
+        self.vad.reset()
 
         stream = self.tts.synthesize_stream(response)
         await self.audio_device.play(stream)

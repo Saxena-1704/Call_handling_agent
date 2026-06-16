@@ -73,6 +73,8 @@ class TextToSpeech:
 
         try:
             while True:
+                if self._stopped:
+                    break
                 data = await loop.run_in_executor(None, proc.stdout.read, 4096)
                 if not data:
                     break
@@ -81,7 +83,8 @@ class TextToSpeech:
                 if data:
                     yield np.frombuffer(data, dtype=np.int16)
         finally:
-            await feed_task
+            if not self._stopped:
+                await feed_task
             self._ffmpeg_proc = None
             try:
                 if proc.returncode is None:
