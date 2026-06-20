@@ -20,6 +20,9 @@ class CartesiaSTT:
         self._client = AsyncCartesia(api_key=api_key)
         self._conn = None
         self._conn_mgr = None
+        self._stream_active = False
+        self._stream_buf = bytearray()
+        self._stream_chunk_size = 3200
 
     async def _ensure_connected(self):
         if self._conn is None:
@@ -30,9 +33,48 @@ class CartesiaSTT:
             )
             self._conn = await self._conn_mgr.__aenter__()
 
+    async def start_stream(self):
+        await self._ensure_connected()
+        self._stream_active = True
+        self._stream_buf.clear()
+
+    async def feed_chunk(self, chunk: np.ndarray):
+        if not self._stream_active:
+            return
+        chunk_bytes = chunk.astype(np.int16).tobytes()
+        self._stream_buf.extend(chunk_bytes)
+        while len(self._stream_buf) >= self._stream_chunk_size:
+            to_send = bytes(self._stream_buf[:self._stream_chunk_size])
+            self._stream_buf = self._stream_buf[self._stream_chunk_size:]
+            await self._conn.send_raw(to_send)
+
+    async def finalize(self) -> str:
+        if not self._stream_active:
+            return ""
+        self._stream_active = False
+        if self._stream_buf:
+            await self._conn.send_raw(bytes(self._stream_buf))
+            self._stream_buf.clear()
+        await self._conn.send_raw("finalize")
+        parts: list[str] = []
+        while True:
+            msg = await self._conn.recv()
+            t = getattr(msg, "type", None)
+            if t == "transcript":
+                text = getattr(msg, "text", "")
+                is_final = getattr(msg, "is_final", False)
+                if is_final:
+                    parts.append(text)
+            elif t == "flush_done":
+                break
+            elif t == "error":
+                raise RuntimeError(
+                    f"Cartesia STT error: {getattr(msg, 'message', 'unknown')}"
+                )
+        return "".join(parts)
+
     async def transcribe_async(self, audio: np.ndarray) -> str:
         await self._ensure_connected()
-
         audio_bytes = audio.astype(np.int16).tobytes()
 
         chunk_size = 3200

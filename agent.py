@@ -23,7 +23,7 @@ class VoiceAgentController:
         event_bus: EventBus | None = None,
     ):
         self.audio_device = audio_device or LocalAudioDevice()
-        self.vad = vad or VoiceActivityDetector(min_silence_duration_ms=500)
+        self.vad = vad or VoiceActivityDetector()
         self.stt = stt or CartesiaSTT()
         self.llm = llm or LLM()
         self.tts = tts or CartesiaTTS()
@@ -33,7 +33,7 @@ class VoiceAgentController:
         self.event_bus = event_bus or EventBus()
 
         self._sm = StateMachine(on_transition=self._on_transition)
-        self._segment_queue: asyncio.Queue[np.ndarray] = asyncio.Queue()
+        self._segment_queue: asyncio.Queue[str] = asyncio.Queue()
         self._processing_task: asyncio.Task | None = None
         self._running = False
 
@@ -46,6 +46,8 @@ class VoiceAgentController:
 
     async def run(self) -> None:
         self._running = True
+        await self.stt._ensure_connected()
+        await self.tts._ensure_connected()
         await self.audio_device.start(self._on_audio_chunk)
         self._sm.transition(CallEvent.CALL_START)
         self._processing_task = asyncio.create_task(self._processing_loop())
@@ -76,11 +78,17 @@ class VoiceAgentController:
             self.tts.stop()
             await self.audio_device.stop_playback()
 
+        if started:
+            await self.stt.start_stream()
+        if started or self.vad.is_speaking:
+            await self.stt.feed_chunk(chunk)
+
         if seg is not None:
             current = self._sm.state
             if current in (CallState.LISTENING, CallState.INTERRUPTED, CallState.PROCESSING):
                 self._sm.transition(CallEvent.SPEECH_END)
-                await self._segment_queue.put(seg)
+                text = await self.stt.finalize()
+                await self._segment_queue.put(text)
 
     async def _processing_loop(self) -> None:
         while self._running:
@@ -94,13 +102,12 @@ class VoiceAgentController:
                 if self._sm.state in (CallState.PROCESSING, CallState.SPEAKING):
                     self._sm.transition(CallEvent.ERROR)
 
-    async def _handle_segment(self, segment: np.ndarray) -> None:
-        text = await self.stt.transcribe_async(segment)
+    async def _handle_segment(self, text: str) -> None:
         print(f"[USER] {text}")
 
         self.conversation.add_turn("user", text)
 
-        if self._sm.state != CallState.PROCESSING:
+        if self._sm.state not in (CallState.PROCESSING, CallState.LISTENING):
             return
 
         self._sm.transition(CallEvent.RESPONSE_READY)
