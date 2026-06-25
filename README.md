@@ -1,22 +1,142 @@
 # Voice Agent — Call Handling System
 
-A modular, async-first voice agent with **Twilio telephony**, **Cartesia STT/TTS**, **Silero VAD**, **Groq LLM**, and **barge-in** support. The audio layer is abstracted behind an `AudioDevice` interface — the same agent code powers both local mic/speaker and phone calls.
+A modular, async-first voice agent with **Twilio telephony**, **Cartesia STT/TTS**, **Silero VAD**, **Groq LLM**, and **barge-in** support.
+
+---
+
+## Quick Start
+
+### 1. Prerequisites
+
+- Python 3.11+
+- A [Twilio](https://twilio.com) account with a purchased phone number
+- [ngrok](https://ngrok.com) account + CLI installed
+- API keys: **Groq** (from [console.groq.com](https://console.groq.com)), **Cartesia** (from [cartesia.ai](https://cartesia.ai))
+
+### 2. Environment Variables
+
+Create a `.env` file in the project root:
+
+```
+GROQ_API_KEY=gsk_...
+TWILIO_ACCOUNT_SID=AC...
+TWILIO_AUTH_TOKEN=...
+TWILIO_PHONE_NUMBER=+1xxxxxxxxxx
+MY_PHONE_NUMBER=+91xxxxxxxxxx
+CARTESIA_API_KEY=sk_car_...
+TWILIO_WS_URL=wss://placeholder.ngrok-free.app/twilio/media-stream
+```
+
+| Variable | Where to get it |
+|----------|----------------|
+| `GROQ_API_KEY` | [Groq Console](https://console.groq.com/keys) |
+| `TWILIO_ACCOUNT_SID` | [Twilio Console](https://console.twilio.com) dashboard |
+| `TWILIO_AUTH_TOKEN` | Twilio Console dashboard (same page) |
+| `TWILIO_PHONE_NUMBER` | Your purchased Twilio number (e.g. `+12025551234`) |
+| `MY_PHONE_NUMBER` | Your personal phone number that will receive the call |
+| `CARTESIA_API_KEY` | [Cartesia Dashboard](https://cartesia.ai/account) |
+
+### 3. Install Dependencies
+
+```
+pip install -r requirements.txt
+```
+
+### 4. Start the Server
+
+```
+python twilio_server.py
+```
+
+You should see: `Uvicorn running on http://0.0.0.0:8765`
+
+### 5. Expose with ngrok
+
+Open a **second terminal** and run:
+
+```
+ngrok http 8765
+```
+
+Look for the line:
+
+```
+Forwarding  wss://abaf-49-43-161-214.ngrok-free.app -> http://localhost:8765
+```
+
+Copy the `wss://` URL (e.g. `wss://abaf-49-43-161-214.ngrok-free.app`).
+
+### 6. Update `TWILIO_WS_URL`
+
+Edit `.env` and set the WebSocket URL to your ngrok address:
+
+```
+TWILIO_WS_URL=wss://abaf-49-43-161-214.ngrok-free.app/twilio/media-stream
+```
+
+### 7. Create a TwiML Bin
+
+A TwiML Bin is a static XML snippet hosted by Twilio. It tells Twilio where to stream the audio.
+
+1. Go to [Twilio Console → TwiML Bins](https://console.twilio.com/us1/develop/twiml-bins) (or search "TwiML Bins" in the console)
+2. Click **Create new TwiML Bin**
+3. Give it a name like `call-handling-agent`
+4. Paste the following XML, **replacing the URL** with your own ngrok WebSocket URL:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Connect>
+    <Stream url="wss://abaf-49-43-161-214.ngrok-free.app/twilio/media-stream" />
+  </Connect>
+</Response>
+```
+
+5. Click **Create**
+6. Copy the generated TwiML Bin URL — it looks like:
+   ```
+   https://handler.twilio.com/twiml/EH5ba5302db6cf0428bda8b7235d3b66b8
+   ```
+
+### 8. Paste the TwiML Bin URL into `make_call.py`
+
+Open `make_call.py` and replace the hardcoded URL on **line 18** with your TwiML Bin URL:
+
+```python
+# Before (line 18):
+    url="https://handler.twilio.com/twiml/EH5ba5302db6cf0428bda8b7235d3b66b8",
+
+# After:
+    url="https://handler.twilio.com/twiml/EH<your-unique-id>",
+```
+
+This tells Twilio which TwiML Bin to use when making the outbound call.
+
+### 9. Make a Call
+
+Open a **third terminal** and run:
+
+```
+python make_call.py
+```
+
+Your phone will ring. Answer it and start speaking. The agent will listen, respond, and support barge-in (you can interrupt it).
 
 ---
 
 ## Architecture
 
 ```
-                     ┌──────────────────────────────────────────────┐
-                     │              Twilio Server                   │
-                     │  (FastAPI, port 8765)                        │
-                     │                                              │
+                      ┌──────────────────────────────────────────────┐
+                      │              Twilio Server                   │
+                      │  (FastAPI, port 8765)                        │
+                      │                                              │
   Twilio Voice ─────▶│  POST /incoming_call  (TwiML)              │
   (PSTN / SIP)       │  POST /make_call      (outbound REST)      │
-                     │  WS  /media-stream    (µ-law ↔ PCM audio)  │
-                     └──────────────┬───────────────────────────────┘
-                                    │ TwilioMediaStreamDevice
-                                    ▼
+                      │  WS  /media-stream    (µ-law ↔ PCM audio)  │
+                      └──────────────┬───────────────────────────────┘
+                                     │ TwilioMediaStreamDevice
+                                     ▼
 ┌───────────────────────────────────────────────────────────────────┐
 │                    VoiceAgentController (agent.py)                 │
 │                                                                   │
@@ -39,11 +159,10 @@ A modular, async-first voice agent with **Twilio telephony**, **Cartesia STT/TTS
 
 ## File-by-File Purpose
 
-### Core Modules
-
 | File | What it does |
 |------|-------------|
 | `agent.py` | **The conductor.** Owns all components, runs the state machine, processes speech segments from an async queue, handles barge-in. Accepts any `AudioDevice` implementation. |
+| `agent_prompt.py` | System prompt for the LLM. |
 | `audio_device.py` | **Audio I/O abstraction.** `AudioDevice` (ABC) with `start()`, `play()`, `stop_playback()`, `close()`. `LocalAudioDevice` implements it via `sounddevice` for laptop mic/speaker. |
 | `twilio_device.py` | **Twilio audio device.** Implements `AudioDevice` over Twilio WebSocket media streams. Converts µ-law (8 kHz) ↔ linear PCM (16 kHz). |
 | `twilio_server.py` | **FastAPI server** (port 8765). Endpoints: `POST /twilio/incoming_call` (TwiML), `POST /twilio/make_call` (outbound), `WS /twilio/media-stream` (real-time audio). Creates one `VoiceAgentController` per call. |
@@ -56,46 +175,27 @@ A modular, async-first voice agent with **Twilio telephony**, **Cartesia STT/TTS
 | `event_bus.py` | **Async pub/sub.** Defined but currently unused by `VoiceAgentController`. |
 | `make_call.py` | Standalone script to initiate an outbound Twilio call via the REST API. |
 
-### Test / Debug Files
-
-| File | Purpose |
-|------|---------|
-| `VAD_test.py` | Standalone VAD test — prints speech segment durations |
-| `stt_test.py` | Mic → VAD → Whisper STT — prints transcriptions (legacy) |
-| `stt_cartesia_test.py` | Mic → VAD → Cartesia STT — prints transcriptions |
-| `mic_test.py` | Quick mic check — prints chunk sizes |
-| `full_pipeline_test.py` | Legacy sync pipeline (mic→VAD→STT→LLM→TTS→speaker) |
-
-### Legacy Files (no longer used by agent.py)
-
-| File | Replaced by |
-|------|-------------|
-| `microphone.py` | `LocalAudioDevice` in `audio_device.py` |
-| `speaker.py` | `LocalAudioDevice` in `audio_device.py` |
-| `stt.py` | `CartesiaSTT` in `stt_cartesia.py` |
-| `tts.py` | `CartesiaTTS` in `tts_cartesia.py` |
-
 ---
 
 ## State Machine
 
 ```
-         ┌──────────────────────────────────────────┐
-         │              STATES                       │
-         │                                          │
-         │   IDLE ──▶ LISTENING ──▶ PROCESSING      │
-         │    ▲                       │              │
-         │    │              ┌────────▼────────┐     │
-         │    │              │    SPEAKING     │     │
-         │    │              └──┬──────────┬───┘     │
-         │    │                 │          │         │
-         │    │          ┌──────▼──┐  ┌────▼──────┐ │
-         │    │          │INTERRUPT│  │PLAYBACK_END│ │
-         │    │          │  ED     │  │           │ │
-         │    │          └──┬──────┘  └───────────┘ │
-         │    │             │                       │
-         │    └─────── CALL_END ────────────────────┘
-         └──────────────────────────────────────────┘
+          ┌──────────────────────────────────────────┐
+          │              STATES                       │
+          │                                          │
+          │   IDLE ──▶ LISTENING ──▶ PROCESSING      │
+          │    ▲                       │              │
+          │    │              ┌────────▼────────┐     │
+          │    │              │    SPEAKING     │     │
+          │    │              └──┬──────────┬───┘     │
+          │    │                 │          │         │
+          │    │          ┌──────▼──┐  ┌────▼──────┐ │
+          │    │          │INTERRUPT│  │PLAYBACK_END│ │
+          │    │          │  ED     │  │           │ │
+          │    │          └──┬──────┘  └───────────┘ │
+          │    │             │                       │
+          │    └─────── CALL_END ────────────────────┘
+          └──────────────────────────────────────────┘
 ```
 
 | State | What happens |
@@ -162,66 +262,6 @@ If the user speaks while still in **PROCESSING**, the speech is queued and handl
 
 ---
 
-## Setup
-
-### 1. Install dependencies
-
-```
-pip install -r requirements.txt
-```
-
-Note: `cartesia[websockets]` requires Cartesia API access. `silero-vad` downloads the model on first use. For Twilio, ensure `fastapi`, `uvicorn`, `twilio`, and `python-multipart` are installed.
-
-### 2. Configure `.env`
-
-```
-GROQ_API_KEY=...
-TWILIO_ACCOUNT_SID=...
-TWILIO_AUTH_TOKEN=...
-TWILIO_PHONE_NUMBER=+1xxxxxxxxxx
-TWILIO_WS_URL=wss://your-ngrok-url.ngrok-free.app/twilio/media-stream
-MY_PHONE_NUMBER=+91xxxxxxxxxx
-CARTESIA_API_KEY=sk_car_...
-```
-
-### 3. (Twilio) Expose the server with ngrok
-
-```
-ngrok http 8765
-```
-
-Update `TWILIO_WS_URL` in `.env` to match the ngrok `wss://` URL.
-
----
-
-## Running
-
-### Local mode (laptop mic + speaker)
-
-```
-python agent.py
-```
-
-Speak into your mic. The agent will listen, think, and respond through your speakers.
-
-### Twilio server (phone calls)
-
-```
-python twilio_server.py
-```
-
-**Inbound calls:** Configure your Twilio number's webhook to `POST https://<ngrok>/twilio/incoming_call`.
-
-**Outbound calls:** Use the auto-generated endpoint:
-
-```bash
-curl -X POST https://<ngrok>/twilio/make_call
-```
-
-Or run `python make_call.py` directly.
-
----
-
 ## Key Design Points
 
 - **`AudioDevice` abstraction** — `LocalAudioDevice` for local mic/speaker, `TwilioMediaStreamDevice` for phone calls. Swap by passing a different device to `VoiceAgentController`.
@@ -247,5 +287,3 @@ Or run `python make_call.py` directly.
 | `python-multipart` | FastAPI form parsing |
 | `python-dotenv` | `.env` loading |
 | `ngrok` | Tunnel for Twilio webhook |
-
-Legacy (no longer used by the agent pipeline): `faster-whisper`, `edge-tts`.
