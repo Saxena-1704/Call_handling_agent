@@ -7,7 +7,6 @@ from llm import LLM
 from tts_cartesia import CartesiaTTS
 from conversation import ConversationManager
 from state_machine import StateMachine, CallState, CallEvent
-from event_bus import EventBus
 from agent_prompt import prompt
 
 
@@ -20,7 +19,6 @@ class VoiceAgentController:
         llm: LLM | None = None,
         tts: CartesiaTTS | None = None,
         conversation: ConversationManager | None = None,
-        event_bus: EventBus | None = None,
     ):
         self.audio_device = audio_device or LocalAudioDevice()
         self.vad = vad or VoiceActivityDetector()
@@ -30,7 +28,6 @@ class VoiceAgentController:
         self.conversation = conversation or ConversationManager(
             system_prompt= prompt
         )
-        self.event_bus = event_bus or EventBus()
 
         self._sm = StateMachine(on_transition=self._on_transition)
         self._segment_queue: asyncio.Queue[str] = asyncio.Queue()

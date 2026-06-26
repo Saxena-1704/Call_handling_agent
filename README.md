@@ -141,7 +141,6 @@ Your phone will ring. Answer it and start speaking. The agent will listen, respo
 | `llm.py` | **Language Model.** Calls Groq's API (LLaMA) with async streaming support. |
 | `conversation.py` | **Conversation history.** Tracks user/assistant turns, builds the message list sent to the LLM with a system prompt. |
 | `state_machine.py` | **Call state machine.** 5 states (`IDLE`, `LISTENING`, `PROCESSING`, `SPEAKING`, `INTERRUPTED`), 7 events. Invalid transitions silently ignored. |
-| `event_bus.py` | **Async pub/sub.** Defined but currently unused by `VoiceAgentController`. |
 | `make_call.py` | Standalone script to initiate an outbound Twilio call via the REST API. |
 
 ---
@@ -255,4 +254,3 @@ If the user speaks while still in **PROCESSING**, the speech is queued and handl
 | `twilio` | Twilio REST API + TwiML |
 | `python-multipart` | FastAPI form parsing |
 | `python-dotenv` | `.env` loading |
-| `ngrok` | Tunnel for Twilio webhook |
