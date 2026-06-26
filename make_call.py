@@ -15,7 +15,8 @@ ngrok_base = ws_url.replace("wss://", "https://").replace("/twilio/media-stream"
 client = Client(account_sid, auth_token)
 
 call = client.calls.create(
-    url="https://handler.twilio.com/twiml/EH5ba5302db6cf0428bda8b7235d3b66b8",
+    url=f"{ngrok_base}/twilio/incoming_call",
+    method="POST",
     to=my_number,
     from_=twilio_number,
 )

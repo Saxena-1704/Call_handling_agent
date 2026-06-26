@@ -28,3 +28,17 @@ class LLM:
             timeout=30,
         )
         return reply.choices[0].message.content
+
+    async def generate_stream(self, messages: list[dict]):
+        stream = await self._client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+            stream=True,
+            timeout=30,
+        )
+        async for chunk in stream:
+            delta = chunk.choices[0].delta.content
+            if delta:
+                yield delta

@@ -22,7 +22,7 @@ app = FastAPI(title="Call Handling Agent — Twilio Server")
 _active_calls: set[str] = set()
 
 
-@app.post("/twilio/incoming_call")
+@app.api_route("/twilio/incoming_call", methods=["GET", "POST"])
 async def incoming_call():
     resp = VoiceResponse()
     connect = Connect()

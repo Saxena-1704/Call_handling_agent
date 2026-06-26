@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import time
 import numpy as np
 from typing import Callable, AsyncIterator
 from fastapi import WebSocket, WebSocketDisconnect
@@ -48,6 +49,7 @@ class TwilioMediaStreamDevice(AudioDevice):
     async def play(self, stream: AsyncIterator[np.ndarray]) -> None:
         self._playing = True
         self._stop_evt.clear()
+        next_target = time.monotonic()
         try:
             async for chunk in stream:
                 if self._stop_evt.is_set():
@@ -63,7 +65,10 @@ class TwilioMediaStreamDevice(AudioDevice):
                     })
                     if self._stop_evt.is_set():
                         break
-                    await asyncio.sleep(len(chunk) / 16000)
+                    next_target += len(chunk) / 16000
+                    now = time.monotonic()
+                    if now < next_target:
+                        await asyncio.sleep(next_target - now)
                 except Exception:
                     break
         finally:

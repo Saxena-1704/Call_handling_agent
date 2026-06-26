@@ -1,12 +1,10 @@
 sounddevice
 silero-vad
 numpy
-faster-whisper
-edge-tts
 python-dotenv
 groq
+cartesia[websockets]
 fastapi
 uvicorn[standard]
 twilio
 python-multipart
-ngrok

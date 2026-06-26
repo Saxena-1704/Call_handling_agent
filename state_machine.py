@@ -25,6 +25,7 @@ _TRANSITIONS: dict[CallState, dict[CallEvent, CallState]] = {
     },
     CallState.LISTENING: {
         CallEvent.SPEECH_END: CallState.PROCESSING,
+        CallEvent.RESPONSE_READY: CallState.SPEAKING,
         CallEvent.CALL_END: CallState.IDLE,
     },
     CallState.PROCESSING: {

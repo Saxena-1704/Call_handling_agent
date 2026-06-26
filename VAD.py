@@ -9,7 +9,7 @@ class VoiceActivityDetector:
     def __init__(
         self,
         threshold: float = 0.5,
-        min_silence_duration_ms: int = 500,
+        min_silence_duration_ms: int = 250,
         speech_pad_ms: int = 30,
         sample_rate: int = 16000,
     ):
@@ -26,6 +26,10 @@ class VoiceActivityDetector:
         self._speech: list[np.ndarray] = []
         self._triggered = False
         self._speech_just_started = False
+
+    @property
+    def is_speaking(self) -> bool:
+        return self._triggered
 
     def process(self, chunk: np.ndarray) -> tuple[np.ndarray | None, bool]:
         self._buf.append(chunk)
