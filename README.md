@@ -58,61 +58,25 @@ Open a **second terminal** and run:
 ngrok http 8765
 ```
 
-Look for the line:
+Look for the `Forwarding` line:
 
 ```
-Forwarding  wss://abaf-49-43-161-214.ngrok-free.app -> http://localhost:8765
+Forwarding                    https://09cf-49-43-161-189.ngrok-free.app -> http://localhost:8765
 ```
 
-Copy the `wss://` URL (e.g. `wss://abaf-49-43-161-214.ngrok-free.app`).
+Copy the `https://` URL (e.g. `https://09cf-49-43-161-189.ngrok-free.app`).
 
-### 6. Update `TWILIO_WS_URL`
+### 6. Update `TWILIO_WS_URL` & Restart Server
 
-Edit `.env` and set the WebSocket URL to your ngrok address:
+Edit `.env` and set `TWILIO_WS_URL` by taking the ngrok URL, replacing `https://` with `wss://`, and appending `/twilio/media-stream`:
 
 ```
-TWILIO_WS_URL=wss://abaf-49-43-161-214.ngrok-free.app/twilio/media-stream
+TWILIO_WS_URL=wss://09cf-49-43-161-189.ngrok-free.app/twilio/media-stream
 ```
 
-### 7. Create a TwiML Bin
+Then **restart the server** (Ctrl+C and `python twilio_server.py` again) so it picks up the new URL.
 
-A TwiML Bin is a static XML snippet hosted by Twilio. It tells Twilio where to stream the audio.
-
-1. Go to [Twilio Console → TwiML Bins](https://console.twilio.com/us1/develop/twiml-bins) (or search "TwiML Bins" in the console)
-2. Click **Create new TwiML Bin**
-3. Give it a name like `call-handling-agent`
-4. Paste the following XML, **replacing the URL** with your own ngrok WebSocket URL:
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Connect>
-    <Stream url="wss://abaf-49-43-161-214.ngrok-free.app/twilio/media-stream" />
-  </Connect>
-</Response>
-```
-
-5. Click **Create**
-6. Copy the generated TwiML Bin URL — it looks like:
-   ```
-   https://handler.twilio.com/twiml/EH5ba5302db6cf0428bda8b7235d3b66b8
-   ```
-
-### 8. Paste the TwiML Bin URL into `make_call.py`
-
-Open `make_call.py` and replace the hardcoded URL on **line 18** with your TwiML Bin URL:
-
-```python
-# Before (line 18):
-    url="https://handler.twilio.com/twiml/EH5ba5302db6cf0428bda8b7235d3b66b8",
-
-# After:
-    url="https://handler.twilio.com/twiml/EH<your-unique-id>",
-```
-
-This tells Twilio which TwiML Bin to use when making the outbound call.
-
-### 9. Make a Call
+### 7. Make a Call
 
 Open a **third terminal** and run:
 
@@ -121,6 +85,11 @@ python make_call.py
 ```
 
 Your phone will ring. Answer it and start speaking. The agent will listen, respond, and support barge-in (you can interrupt it).
+
+> **Tip:** You can also initiate the call by POSTing to the server directly:
+> ```
+> curl -X POST https://your-ngrok.ngrok-free.app/twilio/make_call
+> ```
 
 ---
 
@@ -131,7 +100,7 @@ Your phone will ring. Answer it and start speaking. The agent will listen, respo
                       │              Twilio Server                   │
                       │  (FastAPI, port 8765)                        │
                       │                                              │
-  Twilio Voice ─────▶│  POST /incoming_call  (TwiML)              │
+  Twilio Voice ─────▶│  GET|POST /incoming_call (TwiML)           │
   (PSTN / SIP)       │  POST /make_call      (outbound REST)      │
                       │  WS  /media-stream    (µ-law ↔ PCM audio)  │
                       └──────────────┬───────────────────────────────┘
@@ -165,7 +134,7 @@ Your phone will ring. Answer it and start speaking. The agent will listen, respo
 | `agent_prompt.py` | System prompt for the LLM. |
 | `audio_device.py` | **Audio I/O abstraction.** `AudioDevice` (ABC) with `start()`, `play()`, `stop_playback()`, `close()`. `LocalAudioDevice` implements it via `sounddevice` for laptop mic/speaker. |
 | `twilio_device.py` | **Twilio audio device.** Implements `AudioDevice` over Twilio WebSocket media streams. Converts µ-law (8 kHz) ↔ linear PCM (16 kHz). |
-| `twilio_server.py` | **FastAPI server** (port 8765). Endpoints: `POST /twilio/incoming_call` (TwiML), `POST /twilio/make_call` (outbound), `WS /twilio/media-stream` (real-time audio). Creates one `VoiceAgentController` per call. |
+| `twilio_server.py` | **FastAPI server** (port 8765). Endpoints: `GET/POST /twilio/incoming_call` (TwiML — returns `<Connect><Stream>` dynamically), `POST /twilio/make_call` (outbound via REST), `WS /twilio/media-stream` (real-time audio). Creates one `VoiceAgentController` per call. |
 | `stt_cartesia.py` | **Speech-to-Text** via Cartesia WebSocket API (model `ink-2`). Sends PCM chunks, receives streaming transcripts. |
 | `tts_cartesia.py` | **Text-to-Speech** via Cartesia WebSocket API (model `sonic-3.5`). Supports streaming token→audio — LLM tokens are pushed incrementally so audio starts before the full response is ready. |
 | `VAD.py` | **Voice Activity Detection** using Silero VAD. Returns full speech segments and a `started` flag (critical for barge-in). |
